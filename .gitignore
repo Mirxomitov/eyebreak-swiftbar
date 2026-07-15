@@ -9,5 +9,8 @@ config
 # committed. Ignored in case someone runs `swiftc` inside a working copy.
 eyebreak-blocker
 
+# Native app build output (Eyebreak.app is assembled at install time).
+native/build/
+
 # macOS
 .DS_Store
