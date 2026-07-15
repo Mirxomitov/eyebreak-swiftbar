@@ -1,194 +1,82 @@
-# eyebreak-swiftbar
+# Eyebreak
 
-A menu-bar **20-20-20 eye-break timer** for macOS, built as a [SwiftBar](https://swiftbar.app) plugin.
+A native macOS menu-bar app that helps you follow the **20-20-20 rule** to prevent
+digital eye strain: every **20 minutes**, look at something **20 feet** away for
+**20 seconds**.
 
-## What it is
+## Features
 
-If you work at a screen all day, your eyes rarely refocus — and that sustained
-near-focus is a big driver of digital eye strain, dryness, and headaches. The
-optometrist-recommended countermeasure is the **20-20-20 rule**: every **20
-minutes**, look at something at least **20 feet** away for **20 seconds** (this
-app uses a slightly longer 2-minute break by default).
+- **Menu-bar timer** — a live countdown sits in your menu bar (`👀 19:12` until
+  the next break, `☕` while you're on one).
+- **Full-screen break blocker** — when a break is due, every display blacks out;
+  the primary one shows a live countdown and a rotating quote, so a second monitor
+  can't be used to work through the break.
+- **⌥⇧⎋ to skip** — press Option+Shift+Escape to end a break early (deliberately
+  awkward, so you don't do it by reflex).
+- **Pause / Resume / Reset**, **Take break now**, **End break now** — all in the
+  menu.
+- **Statistics** — total breaks, today / last 7 / last 30 days, active days,
+  current and longest streak, and estimated eye-rest time, computed from a
+  plain-text log on your own machine. Nothing is uploaded.
+- **Launch at login** via `brew services`.
 
-**eyebreak-swiftbar** lives in your menu bar and runs that rule for you:
+Self-contained: one small Swift menu-bar app, no background helpers, no network
+access, no data collection.
 
-- A live countdown sits in the menu bar — `👀 19:12` until your next break,
-  switching to `☕` while you're on one.
-- When a break is due it puts up a **full-screen blocker** on every display: the
-  primary screen shows a live countdown and a rotating quote, the others go
-  solid black so a second monitor can't be used to work through the break. A
-  system notification fires alongside it. If the blocker is turned off (or the
-  Swift helper isn't installed) it falls back to a modal "Start Break" dialog.
-- Need to bail out of a break early? Press **⌥⇧⎋** (Option+Shift+Escape) to
-  dismiss the blocker immediately — deliberately awkward so you don't do it by
-  reflex.
-- You stay in control: **Take break now**, **End break now**, **Pause / Resume**,
-  and **Reset** are all in the menu. A **Settings** submenu toggles the
-  full-screen blocker and **Launch at login**, and opens the config and quotes
-  files for editing.
-- It quietly keeps score. A **📊 Statistics** view shows how consistent you've
-  actually been: total breaks, today / last 7 / last 30 days, active days,
-  current and longest streak, and estimated total eye-rest time. All of it is
-  computed from a plain-text log on your own machine — nothing is uploaded.
+## Requirements
 
-It's intentionally small: a few shell scripts driven by SwiftBar plus one tiny
-Swift helper that only runs during a break, no background app of its own, no
-network access, no data collection.
-
-## Prerequisites
-
-You need to install **two** things before this tool:
-
-1. **macOS.** The scripts target macOS (AppleScript notifications/dialogs). They
-   run under the system `bash`/`zsh` — nothing to install there.
-2. **[SwiftBar](https://swiftbar.app)** — the menu-bar host that runs the plugin.
-   Install it with Homebrew:
-
-   ```sh
-   brew install --cask swiftbar
-   ```
-
-   (or download it from [swiftbar.app](https://swiftbar.app) / the
-   [releases page](https://github.com/swiftbar/SwiftBar/releases)).
-
-   On first launch SwiftBar asks you to pick a **plugin folder** — the default
-   `~/SwiftBar/Plugins` is fine. It will also ask for **notification
-   permission**; grant it, or break alerts won't show.
-
-The scripts themselves need nothing to build. The **full-screen blocker** is one
-small Swift file compiled at install time, so to get it you also need a Swift
-toolchain — **Xcode or the Command Line Tools** (`xcode-select --install`). It's
-optional: without `swiftc` the installer skips the blocker and the break falls
-back to the notification + dialog.
+- macOS 13 or later
+- Xcode or the Command Line Tools (`xcode-select --install`) — the app is compiled
+  from source at install time, which is what lets it run without code-signing.
 
 ## Install
 
-There are two ways to run Eyebreak — pick one:
-
-- **Native app** (`eyebreak`) — a standalone menu-bar app, no SwiftBar. The
-  simplest install.
-- **SwiftBar plugin** (`eyebreak-swiftbar`) — transparent shell scripts hosted by
-  [SwiftBar](https://swiftbar.app). The original version.
-
-Both keep state in `~/.eyebreak`, so history and settings carry over between them.
-
-### Native app via Homebrew (recommended, no SwiftBar)
-
 ```sh
-brew install mirxomitov/eyebreak-swiftbar/eyebreak
+brew install mirxomitov/tap/eyebreak
 brew services start eyebreak      # run it now and at every login
 ```
 
-That's it — look for the 👀 icon in your menu bar. `brew services` manages the
-launch-at-login agent; `brew services stop eyebreak` disables it. Prefer no
-auto-start? Skip the second line and just run `eyebreak`.
+Look for the 👀 icon in your menu bar. `brew services` manages the launch-at-login
+agent; `brew services stop eyebreak` disables it. Prefer no auto-start? Skip the
+second line and just run `eyebreak`.
 
-### SwiftBar plugin via Homebrew
-
-```sh
-brew install --cask swiftbar   # the menu-bar host, if you don't have it yet
-brew install mirxomitov/eyebreak-swiftbar/eyebreak-swiftbar
-eyebreak-swiftbar              # deploy the plugin + helpers into place
-```
-
-The formula compiles the blocker and installs an `eyebreak-swiftbar` command that
-copies everything into `~/.eyebreak` and your SwiftBar plugin folder. SwiftBar
-itself is **not** installed automatically (a formula can't depend on a cask) —
-install the cask first, as shown above.
-
-> **After `brew upgrade eyebreak-swiftbar`, re-run `eyebreak-swiftbar`.** The
-> upgrade only refreshes Homebrew's copy; the command is what redeploys the new
-> code into `~/.eyebreak` and your plugin folder.
-
-### SwiftBar plugin from source
+### Build from source
 
 ```sh
-git clone https://github.com/Mirxomitov/eyebreak-swiftbar.git
-cd eyebreak-swiftbar
-./install.sh
+git clone https://github.com/Mirxomitov/eyebreak.git
+cd eyebreak
+native/build.sh            # produces native/build/Eyebreak.app
+open native/build/Eyebreak.app
 ```
 
-Then open SwiftBar (or choose **Refresh All** from its menu) to load the plugin,
-and grant it notification permission when prompted.
+## Usage
 
-If your SwiftBar plugin folder isn't the default `~/SwiftBar/Plugins`:
+Click the 👀 menu-bar icon for the menu:
 
-```sh
-SWIFTBAR_PLUGIN_DIR="$HOME/path/to/plugins" ./install.sh
-```
+- **Take break now** / **End break now**
+- **Pause** / **Resume**, **Reset timer**
+- **Statistics…**
+- **Settings** — toggle the full-screen blocker, edit the config and quotes files
 
-The installer copies the plugin into your SwiftBar plugin folder and the shared
-library plus helpers into `~/.eyebreak/`, and seeds a default config the first
-time (re-running it upgrades the code but keeps your settings and history).
+During a break the screen blocks; press **⌥⇧⎋** to skip.
 
-## How it works
+## Configuration
 
-| Path | Installs to | Role |
-| --- | --- | --- |
-| `plugin/eyebreak.1s.sh` | `~/SwiftBar/Plugins/` | The SwiftBar plugin. Runs once per second, renders the menu bar, and flips work↔break phases. |
-| `lib/eyebreak-lib.sh` | `~/.eyebreak/` | Shared library: common paths, config, usage logger, state I/O, portable epoch formatter, quote loader, blocker launcher, and the settings toggles. Sourced by all three scripts. |
-| `lib/eyebreak-ctl.sh` | `~/.eyebreak/` | Handles menu actions (break / work / pause / reset, plus the blocker and launch-at-login toggles). |
-| `lib/eyebreak-stats.sh` | `~/.eyebreak/` | Reads the usage log and shows the statistics (stdout or a dialog). |
-| `blocker/blocker.swift` | `~/.eyebreak/eyebreak-blocker` | The full-screen break blocker, compiled at install time. Blacks out every display, shows the countdown + quote, and handles the ⌥⇧⎋ skip. |
-| `assets/quotes.txt` | `~/.eyebreak/quotes.txt` | The pool of break quotes, one per line. Edit freely. |
+State lives in `~/.eyebreak`:
 
-Runtime files live in `~/.eyebreak/`:
-
-- `config` — your `WORK_MINUTES` / `BREAK_MINUTES` / `SHOW_BLOCKER`.
-- `quotes.txt` — the quote pool (seeded once; your edits survive upgrades).
-- `state` — current phase and countdown (managed automatically).
-- `stats.csv` — append-only usage log: `iso,epoch,event` where `event` is
-  `break_start`, `break_end`, or `reset`. Every statistic is derived from this
-  file. It never leaves your machine.
-
-### Configuration
-
-Edit `~/.eyebreak/config` (or use the **Settings** submenu):
-
-```sh
-WORK_MINUTES=20   # minutes of work between breaks
-BREAK_MINUTES=2   # minutes per break
-SHOW_BLOCKER=1    # 1 = full-screen blocker during breaks, 0 = notify only
-```
-
-Use whole numbers. Changes apply on the next tick.
-
-### Launch at login
-
-The **Settings ▸ Launch at login** toggle writes a per-user LaunchAgent
-(`~/Library/LaunchAgents/com.eyebreak.swiftbar.login.plist`) that starts SwiftBar
-at login, so the timer is always running. Toggling it off removes the agent.
-
-### Viewing stats from the terminal
-
-```sh
-~/.eyebreak/eyebreak-stats.sh          # print the report
-~/.eyebreak/eyebreak-stats.sh --csv    # print the log path and reveal it in Finder
-```
+- `config` — `WORK_MINUTES`, `BREAK_MINUTES`, `SHOW_BLOCKER` (`1` = full-screen
+  blocker, `0` = notification only). Edit via **Settings ▸ Edit config…**.
+- `quotes.txt` — the break-quote pool, one per line (seeded on first run).
+- `stats.csv` — append-only usage log (`iso,epoch,event`); every statistic is
+  derived from it. It never leaves your machine.
 
 ## Uninstall
 
 ```sh
-./uninstall.sh            # removes the plugin, helpers, and login agent; keeps stats
-./uninstall.sh --purge    # also deletes ~/.eyebreak and your history
+brew services stop eyebreak
+brew uninstall eyebreak
+rm -rf ~/.eyebreak          # optional: also delete config + history
 ```
-
-This removes the SwiftBar plugin, the helpers and blocker in `~/.eyebreak`, and
-the launch-at-login LaunchAgent (so SwiftBar stops auto-starting). If you
-installed via Homebrew, also run `brew uninstall eyebreak-swiftbar`. Then open
-SwiftBar and **Refresh All** (or quit it) to drop the menu item.
-
-## Notes & limitations
-
-- macOS only (uses AppleScript for notifications and dialogs). The date math is
-  written to work with both the system BSD `date` and GNU coreutils `date`, so
-  the helpers behave the same whichever is first in your `PATH`.
-- "Current streak" counts back from today, falling back to yesterday if you
-  haven't taken a break yet today — so early in the day it shows the streak you
-  are about to continue rather than 0.
-- If a break is **paused midway**, that paused time is currently still counted in
-  the "estimated eye-rest" stat (breaks are short, so the skew is small). Pause
-  events aren't logged, so fixing this precisely would need a stats-schema change.
 
 ## License
 

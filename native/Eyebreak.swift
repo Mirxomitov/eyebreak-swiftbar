@@ -1,12 +1,10 @@
 // Eyebreak — a native macOS menu-bar 20-20-20 eye-break timer.
 //
-// This is the standalone (no-SwiftBar) version: one NSStatusItem process that
-// owns the timer, the menu, the full-screen break blocker, the stats, and the
-// config — the same behaviour the SwiftBar plugin has, but self-contained so it
-// installs with a single `brew install` and runs as its own login item.
+// One NSStatusItem process that owns the timer, the menu, the full-screen break
+// blocker, the stats, and the config — self-contained, installs with a single
+// `brew install`, and runs as its own login item.
 //
-// State lives in ~/.eyebreak (config, quotes.txt, stats.csv) in the SAME formats
-// as the SwiftBar version, so history and settings carry over between the two.
+// State lives in ~/.eyebreak (config, quotes.txt, stats.csv).
 //
 // Build: assembled into Eyebreak.app by native/build.sh (or the Homebrew formula).
 
@@ -103,7 +101,7 @@ enum Quotes {
         "Look away, unfocus, and just notice the room around you.",
     ]
 
-    // Seed the file on first run so users can edit the pool, matching the plugin.
+    // Seed the file on first run so users can edit the pool.
     static func seedIfNeeded() {
         guard !FileManager.default.fileExists(atPath: Paths.quotes) else { return }
         Paths.ensureDir()
@@ -125,7 +123,7 @@ enum Quotes {
 // MARK: - Stats
 
 // Append-only usage log in ~/.eyebreak/stats.csv: "iso,epoch,event" where event
-// is break_start | break_end | reset. Byte-compatible with the SwiftBar version.
+// is break_start | break_end | reset.
 enum Stats {
     static func log(_ event: String, at date: Date = Date()) {
         Paths.ensureDir()
@@ -155,7 +153,7 @@ enum Stats {
         var restSeconds = 0
     }
 
-    // Derive the report from the log the same way eyebreak-stats.sh does.
+    // Derive the report from the usage log.
     static func report() -> Report {
         var r = Report()
         guard let text = try? String(contentsOfFile: Paths.stats, encoding: .utf8) else { return r }

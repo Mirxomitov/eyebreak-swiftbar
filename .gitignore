@@ -1,15 +1,4 @@
-# Runtime data lives in ~/.eyebreak, never in the repo — but ignore these in
-# case anyone runs or symlinks the tool from a working copy.
-state
-stats.csv
-config
-.lock/
-
-# Compiled blocker binary — built into ~/.eyebreak (or Homebrew libexec), never
-# committed. Ignored in case someone runs `swiftc` inside a working copy.
-eyebreak-blocker
-
-# Native app build output (Eyebreak.app is assembled at install time).
+# Native app build output (Eyebreak.app is assembled at build/install time).
 native/build/
 
 # macOS
