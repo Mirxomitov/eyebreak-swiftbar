@@ -24,7 +24,9 @@ class EyebreakSwiftbar < Formula
   #   sha256 "REPLACE_WITH_RELEASE_TARBALL_SHA256"
   #   version "1.2.0"
 
-  depends_on cask: "swiftbar"
+  # SwiftBar is the menu-bar host this plugin runs inside, but a formula can't
+  # depend on a cask (Homebrew rejects `depends_on cask:`), so it's a caveat
+  # instead of an automatic dependency.
   depends_on :macos
 
   def install
@@ -57,11 +59,16 @@ class EyebreakSwiftbar < Formula
 
   def caveats
     <<~EOS
-      One more step — deploy the plugin into your home dir and SwiftBar folder:
+      This plugin needs SwiftBar. If you don't have it yet:
+
+        brew install --cask swiftbar
+
+      Then launch SwiftBar once (so it creates ~/SwiftBar/Plugins) and deploy the
+      plugin into your home dir and that folder:
 
         eyebreak-swiftbar
 
-      Then open SwiftBar (or "Refresh All") and grant it notification permission.
+      Finally, open SwiftBar (or "Refresh All") and grant notification permission.
 
       If your SwiftBar plugin folder isn't ~/SwiftBar/Plugins:
 
