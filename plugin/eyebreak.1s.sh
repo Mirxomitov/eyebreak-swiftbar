@@ -1,22 +1,27 @@
 #!/bin/bash
 # <xbar.title>20-20-20 Eye Break</xbar.title>
-# <xbar.version>v1.0</xbar.version>
+# <xbar.version>v1.1</xbar.version>
 # <xbar.desc>Menu bar 20-20-20 eye break timer.</xbar.desc>
 # <swiftbar.hideAbout>true</swiftbar.hideAbout>
 # <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
 # <swiftbar.hideLastUpdated>true</swiftbar.hideLastUpdated>
 # <swiftbar.hideDisablePlugin>true</swiftbar.hideDisablePlugin>
 
-DIR="$HOME/.eyebreak"
-STATE="$DIR/state"
-CONFIG="$DIR/config"
-CTL="$DIR/eyebreak-ctl.sh"
-STATS="$DIR/stats.csv"
-STATS_SCRIPT="$DIR/eyebreak-stats.sh"
+# Shared paths, config, log_event, write_state, fmt_epoch all live in the lib.
+LIB="$HOME/.eyebreak/eyebreak-lib.sh"
+if [ ! -f "$LIB" ]; then
+    # Surface a clear menu-bar error instead of a silently broken plugin.
+    echo "👀 ⚠️"
+    echo "---"
+    echo "eyebreak library missing at $LIB"
+    echo "Run install.sh from the eyebreak-swiftbar repo"
+    exit 0
+fi
+# shellcheck disable=SC1090
+. "$LIB"
 
-WORK_MINUTES=20
-BREAK_MINUTES=2
-[ -f "$CONFIG" ] && . "$CONFIG"
+CTL="$DIR/eyebreak-ctl.sh"
+STATS_SCRIPT="$DIR/eyebreak-stats.sh"
 
 now=$(date +%s)
 
@@ -29,17 +34,6 @@ breaks=${breaks:-0}
 start_time=${start_time:-$now}
 paused=${paused:-0}
 paused_remaining=${paused_remaining:-0}
-
-write_state() {
-    cat >"$STATE" <<EOF
-phase=$phase
-phase_end=$phase_end
-breaks=$breaks
-start_time=$start_time
-paused=$paused
-paused_remaining=$paused_remaining
-EOF
-}
 
 urlencode() {
     # LC_ALL=C so the loop walks bytes, not characters, and emoji encode correctly.
@@ -80,15 +74,6 @@ alert() {
     disown 2>/dev/null
 }
 
-log_event() {
-    # Append-only usage log, one row per event. The reporter derives every stat
-    # from this file, so it must capture both auto flips (here) and manual actions
-    # (eyebreak-ctl.sh). `date -r "$now"` formats from the epoch we already hold,
-    # keeping the row's clock consistent with the state clock.
-    [ -f "$STATS" ] || printf 'iso,epoch,event\n' >"$STATS"
-    printf '%s,%s,%s\n' "$(date -r "$now" '+%Y-%m-%dT%H:%M:%S')" "$now" "$1" >>"$STATS"
-}
-
 # Without this the seeded phase_end above is recomputed every run and the clock never moves.
 [ -f "$STATE" ] || write_state
 
@@ -105,7 +90,7 @@ else
                 phase=break
                 phase_end=$((now + BREAK_MINUTES * 60))
                 write_state
-                log_event break_start
+                log_event break_start "$now"
                 notify "👀 Eye Break" "Look at something at least 20 feet away for ${BREAK_MINUTES} minutes."
                 alert "20-20-20 Rule" "Time for a ${BREAK_MINUTES}-minute eye break.
 
@@ -115,7 +100,7 @@ Look at something at least 20 feet away." $((BREAK_MINUTES * 60 - 5))
                 phase=work
                 phase_end=$((now + WORK_MINUTES * 60))
                 write_state
-                log_event break_end
+                log_event break_end "$now"
                 notify "✅ Eye Break Complete" "Break finished. Back to work!"
             fi
         fi

@@ -18,9 +18,12 @@ fi
 
 mkdir -p "$DATA_DIR"
 
-install -m 0755 "$REPO_DIR/plugin/eyebreak.1s.sh" "$PLUGIN_DIR/eyebreak.1s.sh"
+# Install the shared library and helpers BEFORE the plugin, so the plugin (which
+# runs once per second and sources the lib) is never present without its lib.
+install -m 0644 "$REPO_DIR/lib/eyebreak-lib.sh"   "$DATA_DIR/eyebreak-lib.sh"
 install -m 0755 "$REPO_DIR/lib/eyebreak-ctl.sh"   "$DATA_DIR/eyebreak-ctl.sh"
 install -m 0755 "$REPO_DIR/lib/eyebreak-stats.sh" "$DATA_DIR/eyebreak-stats.sh"
+install -m 0755 "$REPO_DIR/plugin/eyebreak.1s.sh" "$PLUGIN_DIR/eyebreak.1s.sh"
 
 # Seed config only if the user does not already have one, so upgrades keep settings.
 if [ ! -f "$DATA_DIR/config" ]; then
@@ -34,7 +37,7 @@ fi
 
 echo "Installed:"
 echo "  plugin -> $PLUGIN_DIR/eyebreak.1s.sh"
-echo "  helpers -> $DATA_DIR/{eyebreak-ctl.sh,eyebreak-stats.sh}"
+echo "  helpers -> $DATA_DIR/{eyebreak-lib.sh,eyebreak-ctl.sh,eyebreak-stats.sh}"
 echo
 echo "Next: open SwiftBar (or run 'Refresh All' from its menu) to load the plugin."
 echo "Grant SwiftBar notification permission when prompted so break alerts appear."

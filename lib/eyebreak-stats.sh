@@ -6,14 +6,16 @@
 # Usage:
 #   eyebreak-stats.sh            print the report to stdout
 #   eyebreak-stats.sh --dialog   show the report in a macOS dialog (menu-bar use)
-#   eyebreak-stats.sh --csv      print the raw log path and open it
+#   eyebreak-stats.sh --csv      print the raw log path and reveal it in Finder
 
-DIR="$HOME/.eyebreak"
-STATS="$DIR/stats.csv"
-CONFIG="$DIR/config"
-
-BREAK_MINUTES=2
-[ -f "$CONFIG" ] && . "$CONFIG"
+# Shared paths, config, and the portable fmt_epoch helper come from the lib.
+LIB="$HOME/.eyebreak/eyebreak-lib.sh"
+if [ ! -f "$LIB" ]; then
+    echo "eyebreak library missing at $LIB — run install.sh" >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+. "$LIB"
 
 if [ ! -s "$STATS" ] || [ "$(grep -c break_end "$STATS" 2>/dev/null)" = "0" ]; then
     report="No completed breaks recorded yet.
@@ -31,27 +33,34 @@ $STATS"
     exit 0
 fi
 
-# Day boundaries as epochs, so "today / last 7 / last 30" are calendar-accurate.
-today_mid=$(date -v0H -v0M -v0S '+%s')
-week_start=$((today_mid - 6 * 86400))   # today + previous 6 days
-month_start=$((today_mid - 29 * 86400)) # today + previous 29 days
-
-# One awk pass over the log. Emits:
-#   SUMMARY total today week month paired paired_secs unpaired first_epoch last_epoch
-#   DAY <yyyy-mm-dd> <break_end count that day>
-agg=$(awk -F, -v tmid="$today_mid" -v wk="$week_start" -v mo="$month_start" '
-    NR == 1 && $1 == "iso" { next }        # skip header
-    {
-        ev = $3; ep = $2 + 0; day = substr($1, 1, 10)
+# One awk pass. All day math is done on Julian day numbers derived from each
+# row's calendar date, so it needs no external `date` calls and is immune to
+# timezone/DST drift (consecutive calendar days always differ by exactly 1).
+# Emits one whitespace-separated line:
+#   total today week month active_days paired paired_secs unpaired first last cur longest
+read -r total today week month active_days paired psecs unpaired first_epoch last_epoch cur longest \
+    <<<"$(awk -F, -v today="$(date '+%Y-%m-%d')" '
+    function jdn(s,   y, m, d, a, yy, mm) {
+        y = substr(s, 1, 4) + 0; m = substr(s, 6, 2) + 0; d = substr(s, 9, 2) + 0
+        a = int((14 - m) / 12); yy = y + 4800 - a; mm = m + 12 * a - 3
+        return d + int((153 * mm + 2) / 5) + 365 * yy \
+            + int(yy / 4) - int(yy / 100) + int(yy / 400) - 32045
     }
+    BEGIN { tj = jdn(today) }
+    NR == 1 && $1 == "iso" { next }
+    { ev = $3; ep = $2 + 0; dj = jdn(substr($1, 1, 10)) }
     ev == "break_start" { pend = ep; next }
     ev == "reset"       { pend = 0;  next }
     ev == "break_end" {
         total++
-        dcount[day]++
-        if (ep >= tmid) today++
-        if (ep >= wk)   week++
-        if (ep >= mo)   month++
+        if (!(dj in seen)) {
+            seen[dj] = 1; active++
+            if (minj == 0 || dj < minj) minj = dj
+            if (dj > maxj) maxj = dj
+        }
+        if (dj == tj)     today_c++
+        if (dj > tj - 7)  week_c++
+        if (dj > tj - 30) month_c++
         if (first == 0 || ep < first) first = ep
         if (ep > last) last = ep
         if (pend > 0) { paired++; psecs += (ep - pend); pend = 0 }
@@ -59,17 +68,20 @@ agg=$(awk -F, -v tmid="$today_mid" -v wk="$week_start" -v mo="$month_start" '
         next
     }
     END {
-        printf "SUMMARY %d %d %d %d %d %d %d %d %d\n", \
-            total, today, week, month, paired, psecs, unpaired, first, last
-        for (d in dcount) printf "DAY %s %d\n", d, dcount[d]
+        # Current streak: count back from today, or from yesterday if nothing yet
+        # today, so a morning check does not read 0.
+        k = tj; if (!(k in seen)) k = tj - 1
+        cur = 0; while (k in seen) { cur++; k-- }
+        # Longest streak: scan the whole active range once, tracking run length.
+        best = 0; run = 0
+        for (k = minj; k <= maxj; k++) {
+            if (k in seen) { run++; if (run > best) best = run } else run = 0
+        }
+        printf "%d %d %d %d %d %d %d %d %d %d %d %d\n", \
+            total, today_c, week_c, month_c, active, \
+            paired, psecs, unpaired, first, last, cur, best
     }
-' "$STATS")
-
-read -r _ total today week month paired psecs unpaired first_epoch last_epoch \
-    <<<"$(printf '%s\n' "$agg" | grep '^SUMMARY ')"
-
-days_list=$(printf '%s\n' "$agg" | awk '/^DAY /{print $2}' | sort)
-active_days=$(printf '%s\n' "$days_list" | grep -c .)
+' "$STATS")"
 
 # Estimated eye-rest time: measured seconds for paired start/end events, plus the
 # nominal break length for any break_end we could not pair (e.g. plugin was not
@@ -85,34 +97,8 @@ else
     avg="0.0"
 fi
 
-# Current streak: consecutive days with >=1 break, counting back from today
-# (or from yesterday if nothing yet today, so a morning check does not read 0).
-has_day() { printf '%s\n' "$days_list" | grep -qx "$1"; }
-
-cur=0
-d=$(date '+%Y-%m-%d')
-has_day "$d" || d=$(date -v-1d '+%Y-%m-%d')
-while has_day "$d"; do
-    cur=$((cur + 1))
-    d=$(date -j -v-1d -f '%Y-%m-%d' "$d" '+%Y-%m-%d')
-done
-
-# Longest streak: walk sorted distinct days, extend the run while each day is
-# exactly one day after the previous.
-longest=$(printf '%s\n' "$days_list" | awk '
-    NR == 1 { run = 1; prev = $0; best = 1; next }
-    {
-        cmd = "date -j -v+1d -f %Y-%m-%d " prev " +%Y-%m-%d"
-        cmd | getline nextday; close(cmd)
-        if ($0 == nextday) run++; else run = 1
-        if (run > best) best = run
-        prev = $0
-    }
-    END { print best + 0 }
-')
-
-first_str=$(date -r "$first_epoch" '+%a %b %-d, %Y')
-last_str=$(date -r "$last_epoch" '+%a %b %-d, %Y %H:%M')
+first_str=$(fmt_epoch "$first_epoch" '%a %b %-d, %Y')
+last_str=$(fmt_epoch "$last_epoch" '%a %b %-d, %Y %H:%M')
 
 report=$(cat <<EOF
 📊 Eye Break — Usage Stats

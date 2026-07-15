@@ -2,13 +2,14 @@
 # Control actions for the eye-break menu bar timer.
 # Usage: eyebreak-ctl.sh <break|work|pause|reset>
 
-STATE="$HOME/.eyebreak/state"
-CONFIG="$HOME/.eyebreak/config"
-STATS="$HOME/.eyebreak/stats.csv"
-
-WORK_MINUTES=20
-BREAK_MINUTES=2
-[ -f "$CONFIG" ] && . "$CONFIG"
+# Shared paths, config, log_event, and write_state come from the lib.
+LIB="$HOME/.eyebreak/eyebreak-lib.sh"
+if [ ! -f "$LIB" ]; then
+    echo "eyebreak library missing at $LIB — run install.sh" >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+. "$LIB"
 
 now=$(date +%s)
 
@@ -20,37 +21,19 @@ start_time=${start_time:-$now}
 paused=${paused:-0}
 phase=${phase:-work}
 
-write_state() {
-    cat >"$STATE" <<EOF
-phase=$phase
-phase_end=$phase_end
-breaks=$breaks
-start_time=$start_time
-paused=$paused
-paused_remaining=$paused_remaining
-EOF
-}
-
-log_event() {
-    # Mirror of the plugin's logger so manual "Take/End break now" and "Reset"
-    # land in the same append-only usage log the auto flips write to.
-    [ -f "$STATS" ] || printf 'iso,epoch,event\n' >"$STATS"
-    printf '%s,%s,%s\n' "$(date -r "$now" '+%Y-%m-%dT%H:%M:%S')" "$now" "$1" >>"$STATS"
-}
-
 case "$1" in
 break)
     phase=break
     phase_end=$((now + BREAK_MINUTES * 60))
     paused=0
     paused_remaining=0
-    log_event break_start
+    log_event break_start "$now"
     ;;
 work)
     # Ending a break early still counts it as taken.
     if [ "$phase" = "break" ]; then
         breaks=$((breaks + 1))
-        log_event break_end
+        log_event break_end "$now"
     fi
     phase=work
     phase_end=$((now + WORK_MINUTES * 60))
@@ -75,7 +58,7 @@ reset)
     start_time=$now
     paused=0
     paused_remaining=0
-    log_event reset
+    log_event reset "$now"
     ;;
 *)
     echo "usage: $0 <break|work|pause|reset>" >&2

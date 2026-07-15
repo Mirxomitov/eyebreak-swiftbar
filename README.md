@@ -2,26 +2,56 @@
 
 A menu-bar **20-20-20 eye-break timer** for macOS, built as a [SwiftBar](https://swiftbar.app) plugin.
 
-Every 20 minutes it reminds you to look at something at least 20 feet away for
-2 minutes — the [20-20-20 rule](https://www.aao.org/eye-health/tips-prevention/computer-usage)
-for reducing digital eye strain. It nags you with both a notification **and** a
-click-to-dismiss dialog (a banner alone is too easy to miss), and it keeps a
-private usage log so you can see how consistently you actually take your breaks.
+## What it is
 
-## Features
+If you work at a screen all day, your eyes rarely refocus — and that sustained
+near-focus is a big driver of digital eye strain, dryness, and headaches. The
+optometrist-recommended countermeasure is the **20-20-20 rule**: every **20
+minutes**, look at something at least **20 feet** away for **20 seconds** (this
+app uses a slightly longer 2-minute break by default).
 
-- **Menu-bar countdown** — live `👀 mm:ss` until the next break, `☕` during one.
-- **Two-layer reminder** — a SwiftBar notification plus a modal "Start Break"
-  dialog that comes to the front and self-dismisses when the break ends.
-- **Manual controls** — Take break now, End break now, Pause/Resume, Reset.
-- **Usage statistics** — total breaks, today / last 7 / last 30 days, active
-  days, current & longest streak, and estimated eye-rest time, from a "📊
-  Statistics…" menu item. Data lives in an append-only CSV you own.
-- **Configurable** — work/break durations via `~/.eyebreak/config`.
+**eyebreak-swiftbar** lives in your menu bar and runs that rule for you:
+
+- A live countdown sits in the menu bar — `👀 19:12` until your next break,
+  switching to `☕` while you're on one.
+- When a break is due it gets your attention **twice**: a system notification
+  *and* a modal "Start Break" dialog that jumps to the front of whatever you're
+  doing and dismisses itself when the break ends. (A banner alone is too easy to
+  swipe away and ignore — the whole point is that you actually look away.)
+- You stay in control: **Take break now**, **End break now**, **Pause / Resume**,
+  and **Reset** are all in the menu.
+- It quietly keeps score. A **📊 Statistics** view shows how consistent you've
+  actually been: total breaks, today / last 7 / last 30 days, active days,
+  current and longest streak, and estimated total eye-rest time. All of it is
+  computed from a plain-text log on your own machine — nothing is uploaded.
+
+It's intentionally small: a few shell scripts driven by SwiftBar, no background
+app of its own, no network access, no data collection.
+
+## Prerequisites
+
+You need to install **two** things before this tool:
+
+1. **macOS.** The scripts target macOS (AppleScript notifications/dialogs). They
+   run under the system `bash`/`zsh` — nothing to install there.
+2. **[SwiftBar](https://swiftbar.app)** — the menu-bar host that runs the plugin.
+   Install it with Homebrew:
+
+   ```sh
+   brew install --cask swiftbar
+   ```
+
+   (or download it from [swiftbar.app](https://swiftbar.app) / the
+   [releases page](https://github.com/swiftbar/SwiftBar/releases)).
+
+   On first launch SwiftBar asks you to pick a **plugin folder** — the default
+   `~/SwiftBar/Plugins` is fine. It will also ask for **notification
+   permission**; grant it, or break alerts won't show.
+
+That's the whole dependency list. There is no Xcode, no runtime, and no package
+to build — the tool itself is just scripts.
 
 ## Install
-
-Requires [SwiftBar](https://swiftbar.app) (`brew install --cask swiftbar`).
 
 ```sh
 git clone https://github.com/Mirxomitov/eyebreak-swiftbar.git
@@ -29,8 +59,8 @@ cd eyebreak-swiftbar
 ./install.sh
 ```
 
-Then open SwiftBar (or **Refresh All** from its menu) and grant it notification
-permission when prompted.
+Then open SwiftBar (or choose **Refresh All** from its menu) to load the plugin,
+and grant it notification permission when prompted.
 
 If your SwiftBar plugin folder isn't the default `~/SwiftBar/Plugins`:
 
@@ -38,13 +68,18 @@ If your SwiftBar plugin folder isn't the default `~/SwiftBar/Plugins`:
 SWIFTBAR_PLUGIN_DIR="$HOME/path/to/plugins" ./install.sh
 ```
 
+The installer copies the plugin into your SwiftBar plugin folder and the shared
+library plus helpers into `~/.eyebreak/`, and seeds a default config the first
+time (re-running it upgrades the code but keeps your settings and history).
+
 ## How it works
 
-| Path | Role |
-| --- | --- |
-| `plugin/eyebreak.1s.sh` | The SwiftBar plugin. Runs once per second, renders the menu bar, and flips work↔break phases. Installs to `~/SwiftBar/Plugins/`. |
-| `lib/eyebreak-ctl.sh` | Handles menu actions (break / work / pause / reset). Installs to `~/.eyebreak/`. |
-| `lib/eyebreak-stats.sh` | Reads the usage log and shows the statistics (stdout or a dialog). Installs to `~/.eyebreak/`. |
+| Path | Installs to | Role |
+| --- | --- | --- |
+| `plugin/eyebreak.1s.sh` | `~/SwiftBar/Plugins/` | The SwiftBar plugin. Runs once per second, renders the menu bar, and flips work↔break phases. |
+| `lib/eyebreak-lib.sh` | `~/.eyebreak/` | Shared library: common paths, config, usage logger, state I/O, and a portable epoch formatter. Sourced by all three scripts. |
+| `lib/eyebreak-ctl.sh` | `~/.eyebreak/` | Handles menu actions (break / work / pause / reset). |
+| `lib/eyebreak-stats.sh` | `~/.eyebreak/` | Reads the usage log and shows the statistics (stdout or a dialog). |
 
 Runtime files live in `~/.eyebreak/`:
 
@@ -72,16 +107,14 @@ Use whole numbers. Changes apply on the next tick.
 ~/.eyebreak/eyebreak-stats.sh --csv    # print the log path and reveal it in Finder
 ```
 
-## Requirements & limitations
+## Notes & limitations
 
-- **macOS only.** The scripts rely on BSD `date` (`-v`, `-j -f`, `-r`). If you
-  have GNU coreutils' `date` earlier in your `PATH` (e.g. Homebrew `gnubin`),
-  the date math will misbehave — SwiftBar itself runs with the system `PATH`,
-  so this only affects running the helpers by hand in such a shell.
-- Week/month buckets are computed from fixed 86400-second offsets, so a break
-  logged within an hour of a DST transition can land in an adjacent bucket.
+- macOS only (uses AppleScript for notifications and dialogs). The date math is
+  written to work with both the system BSD `date` and GNU coreutils `date`, so
+  the helpers behave the same whichever is first in your `PATH`.
 - "Current streak" counts back from today, falling back to yesterday if you
-  haven't taken a break yet today, so it can show a streak that ended yesterday.
+  haven't taken a break yet today — so early in the day it shows the streak you
+  are about to continue rather than 0.
 
 ## License
 
