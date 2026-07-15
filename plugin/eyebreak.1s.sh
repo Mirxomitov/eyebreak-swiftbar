@@ -1,6 +1,6 @@
 #!/bin/bash
 # <xbar.title>20-20-20 Eye Break</xbar.title>
-# <xbar.version>v1.1</xbar.version>
+# <xbar.version>v1.2.0</xbar.version>
 # <xbar.desc>Menu bar 20-20-20 eye break timer.</xbar.desc>
 # <swiftbar.hideAbout>true</swiftbar.hideAbout>
 # <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
@@ -35,45 +35,6 @@ start_time=${start_time:-$now}
 paused=${paused:-0}
 paused_remaining=${paused_remaining:-0}
 
-urlencode() {
-    # LC_ALL=C so the loop walks bytes, not characters, and emoji encode correctly.
-    local LC_ALL=C
-    local s=$1 i c out=
-    for ((i = 0; i < ${#s}; i++)); do
-        c=${s:$i:1}
-        case $c in
-            [a-zA-Z0-9.~_-]) out+=$c ;;
-            *) out+=$(printf '%%%02X' "'$c") ;;
-        esac
-    done
-    printf '%s' "$out"
-}
-
-notify() {
-    # osascript notifications post as "Script Editor", which is not authorized to
-    # notify, and `display notification` still exits 0 when suppressed. Route through
-    # SwiftBar instead, which holds the notification permission.
-    local plugin=${SWIFTBAR_PLUGIN_PATH##*/}
-    plugin=${plugin:-eyebreak.1s.sh}
-    open -g "swiftbar://notify?plugin=$(urlencode "$plugin")&title=$(urlencode "$1")&body=$(urlencode "$2")&silent=false" >/dev/null 2>&1
-}
-
-alert() {
-    # A banner slides away and gets missed, so the break also gets a modal dialog.
-    # Detached: `display dialog` blocks until clicked, and SwiftBar re-runs this
-    # plugin every second — inline, the menu bar clock would freeze behind it.
-    # `tell me to activate` pulls the dialog in front of the frontmost app.
-    # Args go through argv, not string interpolation, so quotes in them can't break
-    # the AppleScript. It self-dismisses just before the break ends.
-    nohup osascript \
-        -e 'on run {t, m, secs}' \
-        -e 'tell me to activate' \
-        -e 'display dialog m with title t buttons {"Start Break"} default button "Start Break" with icon caution giving up after (secs as integer)' \
-        -e 'end run' \
-        "$1" "$2" "$3" >/dev/null 2>&1 &
-    disown 2>/dev/null
-}
-
 # Without this the seeded phase_end above is recomputed every run and the clock never moves.
 [ -f "$STATE" ] || write_state
 
@@ -83,6 +44,14 @@ else
     remaining=$((phase_end - now))
 
     if [ "$remaining" -le 0 ]; then
+        # A run that grabbed the lock and was then SIGKILLed (e.g. SwiftBar's
+        # background-run timeout) never runs its EXIT trap, so a stale .lock would
+        # otherwise wedge the phase machine forever. Clear it if it's older than a
+        # few seconds — a real flip holds the lock for a fraction of one tick.
+        if [ -d "$DIR/.lock" ]; then
+            lock_mtime=$(stat -f %m "$DIR/.lock" 2>/dev/null || stat -c %Y "$DIR/.lock" 2>/dev/null || echo "$now")
+            [ $((now - lock_mtime)) -ge 5 ] && rmdir "$DIR/.lock" 2>/dev/null
+        fi
         # Serialize the phase flip so a slow run can't double-fire it.
         if mkdir "$DIR/.lock" 2>/dev/null; then
             trap 'rmdir "$DIR/.lock" 2>/dev/null' EXIT
@@ -91,17 +60,9 @@ else
                 phase_end=$((now + BREAK_MINUTES * 60))
                 write_state
                 log_event break_start "$now"
-                notify "👀 Eye Break" "Look at something at least 20 feet away for ${BREAK_MINUTES} minutes."
-                # Prefer the full-screen blocker; only fall back to the modal
-                # dialog when it is disabled or not installed, so we never stack
-                # both a blackout and a dialog on top of each other.
-                if [ "${SHOW_BLOCKER:-1}" = "1" ] && [ -x "$BLOCKER" ]; then
-                    launch_blocker $((BREAK_MINUTES * 60))
-                else
-                    alert "20-20-20 Rule" "Time for a ${BREAK_MINUTES}-minute eye break.
-
-Look at something at least 20 feet away." $((BREAK_MINUTES * 60 - 5))
-                fi
+                # One shared path decides notification + blocker-or-dialog-or-
+                # nothing based on SHOW_BLOCKER; the manual break in ctl uses it too.
+                present_break $((BREAK_MINUTES * 60))
             else
                 breaks=$((breaks + 1))
                 phase=work

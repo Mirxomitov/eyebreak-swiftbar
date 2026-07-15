@@ -36,9 +36,14 @@ install -m 0755 "$REPO_DIR/lib/eyebreak-stats.sh" "$DATA_DIR/eyebreak-stats.sh"
 #   3. Neither: skip, and say why.
 if [ -f "$REPO_DIR/blocker/blocker.swift" ] && command -v swiftc >/dev/null 2>&1; then
     echo "Compiling the full-screen blocker…"
-    swiftc -O "$REPO_DIR/blocker/blocker.swift" -o "$DATA_DIR/eyebreak-blocker"
-    chmod 0755 "$DATA_DIR/eyebreak-blocker"
-    echo "  blocker -> $DATA_DIR/eyebreak-blocker"
+    # `|| { ... }` keeps a compile failure (broken toolchain, SDK mismatch) from
+    # tripping `set -e` and aborting the whole install — the blocker is optional.
+    if swiftc -O "$REPO_DIR/blocker/blocker.swift" -o "$DATA_DIR/eyebreak-blocker"; then
+        chmod 0755 "$DATA_DIR/eyebreak-blocker"
+        echo "  blocker -> $DATA_DIR/eyebreak-blocker"
+    else
+        echo "Blocker compile failed — skipping it; the break will use the dialog." >&2
+    fi
 elif [ -x "$DATA_DIR/eyebreak-blocker" ]; then
     echo "Using the prebuilt blocker at $DATA_DIR/eyebreak-blocker"
 elif [ ! -f "$REPO_DIR/blocker/blocker.swift" ]; then
@@ -69,6 +74,11 @@ BREAK_MINUTES=2
 SHOW_BLOCKER=1
 EOF
     echo "Seeded default config at $DATA_DIR/config"
+elif ! grep -q '^[[:space:]]*SHOW_BLOCKER=' "$DATA_DIR/config"; then
+    # Backfill the key added in v1.2.0 so upgrading users see it in their config
+    # (behaviour is unchanged — the lib already defaults it to 1).
+    printf '# Put up the full-screen blocker during a break (1), or just notify (0).\nSHOW_BLOCKER=1\n' >>"$DATA_DIR/config"
+    echo "Added SHOW_BLOCKER=1 to your existing config"
 fi
 
 echo "Installed:"

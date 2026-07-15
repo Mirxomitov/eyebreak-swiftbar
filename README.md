@@ -66,15 +66,21 @@ back to the notification + dialog.
 ### With Homebrew (this repo is its own tap)
 
 ```sh
+brew install --cask swiftbar   # the menu-bar host, if you don't have it yet
 brew install --HEAD mirxomitov/eyebreak-swiftbar/eyebreak-swiftbar
-eyebreak-swiftbar          # deploy the plugin + helpers into place
+eyebreak-swiftbar              # deploy the plugin + helpers into place
 ```
 
 (Once a tagged release is published, `brew tap mirxomitov/eyebreak-swiftbar
 <repo-url>` then `brew install eyebreak-swiftbar` works without `--HEAD`.) The
-formula pulls in the SwiftBar cask, compiles the blocker, and installs an
-`eyebreak-swiftbar` command that copies everything into `~/.eyebreak` and your
-SwiftBar plugin folder.
+formula compiles the blocker and installs an `eyebreak-swiftbar` command that
+copies everything into `~/.eyebreak` and your SwiftBar plugin folder. SwiftBar
+itself is **not** installed automatically (a formula can't depend on a cask) —
+install the cask first, as shown above.
+
+> **After `brew upgrade eyebreak-swiftbar`, re-run `eyebreak-swiftbar`.** The
+> upgrade only refreshes Homebrew's copy; the command is what redeploys the new
+> code into `~/.eyebreak` and your plugin folder.
 
 ### From source
 
@@ -142,6 +148,18 @@ at login, so the timer is always running. Toggling it off removes the agent.
 ~/.eyebreak/eyebreak-stats.sh --csv    # print the log path and reveal it in Finder
 ```
 
+## Uninstall
+
+```sh
+./uninstall.sh            # removes the plugin, helpers, and login agent; keeps stats
+./uninstall.sh --purge    # also deletes ~/.eyebreak and your history
+```
+
+This removes the SwiftBar plugin, the helpers and blocker in `~/.eyebreak`, and
+the launch-at-login LaunchAgent (so SwiftBar stops auto-starting). If you
+installed via Homebrew, also run `brew uninstall eyebreak-swiftbar`. Then open
+SwiftBar and **Refresh All** (or quit it) to drop the menu item.
+
 ## Notes & limitations
 
 - macOS only (uses AppleScript for notifications and dialogs). The date math is
@@ -150,6 +168,9 @@ at login, so the timer is always running. Toggling it off removes the agent.
 - "Current streak" counts back from today, falling back to yesterday if you
   haven't taken a break yet today — so early in the day it shows the streak you
   are about to continue rather than 0.
+- If a break is **paused midway**, that paused time is currently still counted in
+  the "estimated eye-rest" stat (breaks are short, so the skew is small). Pause
+  events aren't logged, so fixing this precisely would need a stats-schema change.
 
 ## License
 

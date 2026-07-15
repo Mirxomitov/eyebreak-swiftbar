@@ -20,6 +20,9 @@ breaks=${breaks:-0}
 start_time=${start_time:-$now}
 paused=${paused:-0}
 phase=${phase:-work}
+# Default phase_end too, so a Pause issued before the plugin has ever written
+# state doesn't compute a bogus (negative) remaining and stick the clock at 00:00.
+phase_end=${phase_end:-$((now + WORK_MINUTES * 60))}
 
 case "$1" in
 break)
@@ -28,8 +31,9 @@ break)
     paused=0
     paused_remaining=0
     log_event break_start "$now"
-    # A manually taken break gets the same blocker the auto flip uses.
-    launch_blocker $((BREAK_MINUTES * 60))
+    # Same presentation the auto flip uses: notification + blocker (or dialog, or
+    # notification only) per SHOW_BLOCKER — not a bare, invisible break.
+    present_break $((BREAK_MINUTES * 60))
     ;;
 work)
     # Ending a break early still counts it as taken.
@@ -41,6 +45,8 @@ work)
     phase_end=$((now + WORK_MINUTES * 60))
     paused=0
     paused_remaining=0
+    # Dismiss any blocker still on screen so "End break now" clears the blackout.
+    pkill -f "$BLOCKER" 2>/dev/null || true
     ;;
 pause)
     if [ "$paused" = "1" ]; then
