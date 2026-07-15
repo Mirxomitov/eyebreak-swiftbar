@@ -1,0 +1,9 @@
+# Runtime data lives in ~/.eyebreak, never in the repo — but ignore these in
+# case anyone runs or symlinks the tool from a working copy.
+state
+stats.csv
+config
+.lock/
+
+# macOS
+.DS_Store
