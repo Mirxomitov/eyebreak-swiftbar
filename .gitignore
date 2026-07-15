@@ -5,5 +5,9 @@ stats.csv
 config
 .lock/
 
+# Compiled blocker binary — built into ~/.eyebreak (or Homebrew libexec), never
+# committed. Ignored in case someone runs `swiftc` inside a working copy.
+eyebreak-blocker
+
 # macOS
 .DS_Store

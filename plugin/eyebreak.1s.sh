@@ -92,9 +92,16 @@ else
                 write_state
                 log_event break_start "$now"
                 notify "👀 Eye Break" "Look at something at least 20 feet away for ${BREAK_MINUTES} minutes."
-                alert "20-20-20 Rule" "Time for a ${BREAK_MINUTES}-minute eye break.
+                # Prefer the full-screen blocker; only fall back to the modal
+                # dialog when it is disabled or not installed, so we never stack
+                # both a blackout and a dialog on top of each other.
+                if [ "${SHOW_BLOCKER:-1}" = "1" ] && [ -x "$BLOCKER" ]; then
+                    launch_blocker $((BREAK_MINUTES * 60))
+                else
+                    alert "20-20-20 Rule" "Time for a ${BREAK_MINUTES}-minute eye break.
 
 Look at something at least 20 feet away." $((BREAK_MINUTES * 60 - 5))
+                fi
             else
                 breaks=$((breaks + 1))
                 phase=work
@@ -146,3 +153,25 @@ fi
 echo "Reset timer | bash=$CTL param1=reset terminal=false refresh=true"
 echo "---"
 echo "📊 Statistics… | bash=$STATS_SCRIPT param1=--dialog terminal=false"
+echo "---"
+
+# Settings submenu — SwiftBar renders leading tabs as nesting.
+echo "Settings"
+
+if [ "${SHOW_BLOCKER:-1}" = "1" ]; then
+    echo "--✓ Full-screen blocker | bash=$CTL param1=blocker-off terminal=false refresh=true"
+else
+    echo "--Full-screen blocker | bash=$CTL param1=blocker-on terminal=false refresh=true"
+fi
+if [ ! -x "$BLOCKER" ]; then
+    echo "--⚠ Blocker not installed — re-run install.sh | color=orange"
+fi
+
+if [ -f "$LOGIN_PLIST" ]; then
+    echo "--✓ Launch at login | bash=$CTL param1=login-disable terminal=false refresh=true"
+else
+    echo "--Launch at login | bash=$CTL param1=login-enable terminal=false refresh=true"
+fi
+
+echo "--Edit config… | bash=/usr/bin/open param1=-t param2=$CONFIG terminal=false"
+echo "--Edit quotes… | bash=/usr/bin/open param1=-t param2=$QUOTES terminal=false"

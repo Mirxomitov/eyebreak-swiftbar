@@ -1,0 +1,18 @@
+# Quotes shown on the full-screen break blocker. One per line.
+# Blank lines and lines starting with # are ignored. Edit freely — the loader
+# picks one at random each break. Keep them short (they wrap to ~4 lines).
+Look at something at least 20 feet away for a full 20 seconds.
+Your eyes have been focused up close — let them relax into the distance.
+Blink slowly a few times. Screens make you blink less than half as often.
+Roll your shoulders back and unclench your jaw while you look away.
+The work will still be there in two minutes. Your eyes need this.
+Find the farthest point you can see and rest your gaze there.
+Stand up, look out a window, and let your focus drift to the horizon.
+Distance focus relaxes the muscles that near-work keeps tense all day.
+Close your eyes for a moment, then open them and look far away.
+Every break now is eye strain and headaches you don't get later.
+Soften your gaze. There's nothing here you need to stare at.
+Take a slow breath in, look up and out, and let your eyes wander.
+20 feet, 20 seconds — the cheapest health habit you'll ever keep.
+Give your eyes the same break you'd give any muscle you'd worked for 20 minutes.
+Look away, unfocus, and just notice the room around you.

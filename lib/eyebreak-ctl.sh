@@ -28,6 +28,8 @@ break)
     paused=0
     paused_remaining=0
     log_event break_start "$now"
+    # A manually taken break gets the same blocker the auto flip uses.
+    launch_blocker $((BREAK_MINUTES * 60))
     ;;
 work)
     # Ending a break early still counts it as taken.
@@ -60,8 +62,26 @@ reset)
     paused_remaining=0
     log_event reset "$now"
     ;;
+# Settings toggles below don't touch timer state, so they act and exit before the
+# write_state at the bottom (which would otherwise re-serialize the timer).
+blocker-on)
+    set_config SHOW_BLOCKER 1
+    exit 0
+    ;;
+blocker-off)
+    set_config SHOW_BLOCKER 0
+    exit 0
+    ;;
+login-enable)
+    enable_login
+    exit 0
+    ;;
+login-disable)
+    disable_login
+    exit 0
+    ;;
 *)
-    echo "usage: $0 <break|work|pause|reset>" >&2
+    echo "usage: $0 <break|work|pause|reset|blocker-on|blocker-off|login-enable|login-disable>" >&2
     exit 1
     ;;
 esac
