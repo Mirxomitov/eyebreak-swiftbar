@@ -63,17 +63,35 @@ back to the notification + dialog.
 
 ## Install
 
-### With Homebrew (this repo is its own tap)
+There are two ways to run Eyebreak — pick one:
+
+- **Native app** (`eyebreak`) — a standalone menu-bar app, no SwiftBar. The
+  simplest install.
+- **SwiftBar plugin** (`eyebreak-swiftbar`) — transparent shell scripts hosted by
+  [SwiftBar](https://swiftbar.app). The original version.
+
+Both keep state in `~/.eyebreak`, so history and settings carry over between them.
+
+### Native app via Homebrew (recommended, no SwiftBar)
+
+```sh
+brew install mirxomitov/eyebreak-swiftbar/eyebreak
+brew services start eyebreak      # run it now and at every login
+```
+
+That's it — look for the 👀 icon in your menu bar. `brew services` manages the
+launch-at-login agent; `brew services stop eyebreak` disables it. Prefer no
+auto-start? Skip the second line and just run `eyebreak`.
+
+### SwiftBar plugin via Homebrew
 
 ```sh
 brew install --cask swiftbar   # the menu-bar host, if you don't have it yet
-brew install --HEAD mirxomitov/eyebreak-swiftbar/eyebreak-swiftbar
+brew install mirxomitov/eyebreak-swiftbar/eyebreak-swiftbar
 eyebreak-swiftbar              # deploy the plugin + helpers into place
 ```
 
-(Once a tagged release is published, `brew tap mirxomitov/eyebreak-swiftbar
-<repo-url>` then `brew install eyebreak-swiftbar` works without `--HEAD`.) The
-formula compiles the blocker and installs an `eyebreak-swiftbar` command that
+The formula compiles the blocker and installs an `eyebreak-swiftbar` command that
 copies everything into `~/.eyebreak` and your SwiftBar plugin folder. SwiftBar
 itself is **not** installed automatically (a formula can't depend on a cask) —
 install the cask first, as shown above.
@@ -82,7 +100,7 @@ install the cask first, as shown above.
 > upgrade only refreshes Homebrew's copy; the command is what redeploys the new
 > code into `~/.eyebreak` and your plugin folder.
 
-### From source
+### SwiftBar plugin from source
 
 ```sh
 git clone https://github.com/Mirxomitov/eyebreak-swiftbar.git

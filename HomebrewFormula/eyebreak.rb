@@ -10,12 +10,10 @@ class Eyebreak < Formula
   desc "Native menu-bar 20-20-20 eye-break timer with a full-screen break blocker"
   homepage "https://github.com/Mirxomitov/eyebreak-swiftbar"
   license "MIT"
+  url "https://github.com/Mirxomitov/eyebreak-swiftbar/archive/refs/tags/v1.2.0.tar.gz"
+  sha256 "dae81bbb3543cecef919fa8a27e9fc0251afd98669f6073f35afb84cdabfbbb7"
+  version "1.2.0"
   head "https://github.com/Mirxomitov/eyebreak-swiftbar.git", branch: "main"
-
-  # For a tagged release, publish v1.2.0 and fill in the sha256:
-  #   url "https://github.com/Mirxomitov/eyebreak-swiftbar/archive/refs/tags/v1.2.0.tar.gz"
-  #   sha256 "REPLACE_WITH_RELEASE_TARBALL_SHA256"
-  #   version "1.2.0"
 
   depends_on :macos
 
