@@ -24,14 +24,25 @@ install -m 0644 "$REPO_DIR/lib/eyebreak-lib.sh"   "$DATA_DIR/eyebreak-lib.sh"
 install -m 0755 "$REPO_DIR/lib/eyebreak-ctl.sh"   "$DATA_DIR/eyebreak-ctl.sh"
 install -m 0755 "$REPO_DIR/lib/eyebreak-stats.sh" "$DATA_DIR/eyebreak-stats.sh"
 
-# Compile the full-screen break blocker if a Swift toolchain is available. It is
-# optional: without it the break falls back to the notification + modal dialog,
-# so a missing compiler degrades gracefully instead of failing the install.
-if command -v swiftc >/dev/null 2>&1; then
+# Set up the full-screen break blocker. It is optional: without it the break
+# falls back to the notification + modal dialog, so any failure here degrades
+# gracefully instead of aborting the install.
+#
+# Three cases, in order:
+#   1. Source + swiftc present (a source checkout): compile it.
+#   2. No source but a prebuilt binary already in place (the Homebrew formula
+#      compiles the blocker itself and hands this script the binary, without
+#      shipping the .swift source): keep what's there.
+#   3. Neither: skip, and say why.
+if [ -f "$REPO_DIR/blocker/blocker.swift" ] && command -v swiftc >/dev/null 2>&1; then
     echo "Compiling the full-screen blocker…"
     swiftc -O "$REPO_DIR/blocker/blocker.swift" -o "$DATA_DIR/eyebreak-blocker"
     chmod 0755 "$DATA_DIR/eyebreak-blocker"
     echo "  blocker -> $DATA_DIR/eyebreak-blocker"
+elif [ -x "$DATA_DIR/eyebreak-blocker" ]; then
+    echo "Using the prebuilt blocker at $DATA_DIR/eyebreak-blocker"
+elif [ ! -f "$REPO_DIR/blocker/blocker.swift" ]; then
+    echo "No blocker source found — skipping the full-screen blocker." >&2
 else
     echo "swiftc not found — skipping the full-screen blocker." >&2
     echo "Install Xcode or the Command Line Tools, then re-run to enable it." >&2
