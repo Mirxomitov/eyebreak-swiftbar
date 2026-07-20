@@ -64,8 +64,10 @@ During a break the screen blocks; press **⌥⇧⎋** to skip.
 
 State lives in `~/.eyebreak`:
 
-- `config` — `WORK_MINUTES`, `BREAK_MINUTES`, `SHOW_BLOCKER` (`1` = full-screen
-  blocker, `0` = notification only). Edit via **Settings ▸ Edit config…**.
+- `config` — `WORK_MINUTES`, `BREAK_SECONDS` (short break length in seconds),
+  `BREAKS_UNTIL_LONG` and `LONG_BREAK_MINUTES` (Pomodoro: after this many short
+  breaks, take one longer break), `SHOW_BLOCKER` (`1` = full-screen blocker,
+  `0` = notification only). Edit via **Settings ▸ Edit config…**.
 - `quotes.txt` — the break-quote pool, one per line (seeded on first run).
 - `stats.csv` — append-only usage log (`iso,epoch,event`); every statistic is
   derived from it. It never leaves your machine.

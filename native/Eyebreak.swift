@@ -35,19 +35,27 @@ enum Paths {
 
 struct Config {
     var workMinutes = 20
-    var breakMinutes = 2
+    // A short break is the classic 20-20-20 glance-away — measured in seconds.
+    var breakSeconds = 20
+    // Pomodoro: after this many short breaks, take one longer break instead.
+    var breaksUntilLong = 4
+    var longBreakMinutes = 5
     var showBlocker = true
 
-    // Phase lengths in seconds. EYEBREAK_WORK_SECONDS / EYEBREAK_BREAK_SECONDS
-    // override the minute config (used by the test harness to drive a full cycle
-    // in seconds); otherwise it's just minutes × 60.
+    // Phase lengths in seconds. EYEBREAK_WORK_SECONDS / EYEBREAK_BREAK_SECONDS /
+    // EYEBREAK_LONG_BREAK_SECONDS override the config (used by the test harness
+    // to drive a full cycle in seconds); otherwise it's the configured value.
     var workSeconds: Int {
         if let v = ProcessInfo.processInfo.environment["EYEBREAK_WORK_SECONDS"], let n = Int(v), n >= 1 { return n }
         return workMinutes * 60
     }
-    var breakSeconds: Int {
+    var shortBreakSeconds: Int {
         if let v = ProcessInfo.processInfo.environment["EYEBREAK_BREAK_SECONDS"], let n = Int(v), n >= 1 { return n }
-        return breakMinutes * 60
+        return breakSeconds
+    }
+    var longBreakSeconds: Int {
+        if let v = ProcessInfo.processInfo.environment["EYEBREAK_LONG_BREAK_SECONDS"], let n = Int(v), n >= 1 { return n }
+        return longBreakMinutes * 60
     }
 
     static func load() -> Config {
@@ -59,9 +67,13 @@ struct Config {
             let parts = line.split(separator: "=", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespaces) }
             guard parts.count == 2 else { continue }
             switch parts[0] {
-            case "WORK_MINUTES":  if let n = Int(parts[1]), n >= 1 { c.workMinutes = n }
-            case "BREAK_MINUTES": if let n = Int(parts[1]), n >= 1 { c.breakMinutes = n }
-            case "SHOW_BLOCKER":  c.showBlocker = (parts[1] != "0")
+            case "WORK_MINUTES":       if let n = Int(parts[1]), n >= 1 { c.workMinutes = n }
+            case "BREAK_SECONDS":      if let n = Int(parts[1]), n >= 1 { c.breakSeconds = n }
+            case "BREAKS_UNTIL_LONG":  if let n = Int(parts[1]), n >= 1 { c.breaksUntilLong = n }
+            case "LONG_BREAK_MINUTES": if let n = Int(parts[1]), n >= 1 { c.longBreakMinutes = n }
+            case "SHOW_BLOCKER":       c.showBlocker = (parts[1] != "0")
+            // Back-compat: honor an older minute-based break config.
+            case "BREAK_MINUTES":      if let n = Int(parts[1]), n >= 1 { c.breakSeconds = n * 60 }
             default: break
             }
         }
@@ -71,9 +83,14 @@ struct Config {
     func save() {
         Paths.ensureDir()
         let text = """
-        # Minutes of work between breaks, and minutes per break.
+        # Minutes of work between breaks.
         WORK_MINUTES=\(workMinutes)
-        BREAK_MINUTES=\(breakMinutes)
+        # Length of a short break, in seconds (the 20-20-20 glance-away).
+        BREAK_SECONDS=\(breakSeconds)
+        # Pomodoro: take one long break after this many short breaks.
+        BREAKS_UNTIL_LONG=\(breaksUntilLong)
+        # Length of that long break, in minutes.
+        LONG_BREAK_MINUTES=\(longBreakMinutes)
         # Put up the full-screen blocker during a break (1), or just notify (0).
         SHOW_BLOCKER=\(showBlocker ? 1 : 0)
 
@@ -228,12 +245,14 @@ final class BlockerController {
     private var windows: [NSWindow] = []
     private var countdownLabel = NSTextField(labelWithString: "")
     private var keyMonitor: Any?
+    private var title = "Eye break"
     var onSkip: (() -> Void)?
 
     var isShowing: Bool { !windows.isEmpty }
 
-    func present(quote: String) {
+    func present(quote: String, title: String = "Eye break") {
         dismiss() // never stack
+        self.title = title
         buildWindows(quote: quote)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -297,7 +316,7 @@ final class BlockerController {
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor.black.cgColor
 
-        let title = NSTextField(labelWithString: "Eye break")
+        let title = NSTextField(labelWithString: self.title)
         title.font = .systemFont(ofSize: 34, weight: .semibold)
         title.textColor = NSColor.white.withAlphaComponent(0.85)
         title.alignment = .center
@@ -346,6 +365,133 @@ final class BlockerController {
     }
 }
 
+// MARK: - Settings window (native controls, so the config can't be mistyped)
+
+final class SettingsWindowController: NSObject, NSWindowDelegate {
+    private var window: NSWindow?
+    private var config = Config()
+    var onSave: ((Config) -> Void)?
+
+    private let workStepper = NSStepper()
+    private let breakStepper = NSStepper()
+    private let untilLongStepper = NSStepper()
+    private let longStepper = NSStepper()
+    private let blockerCheck = NSButton(checkboxWithTitle: "Show the full-screen blocker during breaks",
+                                        target: nil, action: nil)
+    private let workValue = NSTextField(labelWithString: "")
+    private let breakValue = NSTextField(labelWithString: "")
+    private let untilLongValue = NSTextField(labelWithString: "")
+    private let longValue = NSTextField(labelWithString: "")
+
+    func show(config: Config) {
+        self.config = config
+        if window == nil { build() }
+        sync()
+        window?.center()
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func build() {
+        // Bounded steppers mean every reachable value is valid — nothing to mistype.
+        configure(workStepper, min: 1, max: 180, step: 1)
+        configure(breakStepper, min: 5, max: 3600, step: 5)
+        configure(untilLongStepper, min: 1, max: 12, step: 1)
+        configure(longStepper, min: 1, max: 120, step: 1)
+        blockerCheck.target = self
+        blockerCheck.action = #selector(edited)
+
+        let grid = NSGridView()
+        grid.addRow(with: row("Work interval",     stepper: workStepper,     value: workValue))
+        grid.addRow(with: row("Short break",       stepper: breakStepper,    value: breakValue))
+        grid.addRow(with: row("Breaks until long", stepper: untilLongStepper, value: untilLongValue))
+        grid.addRow(with: row("Long break",        stepper: longStepper,     value: longValue))
+        grid.rowSpacing = 12
+        grid.columnSpacing = 12
+        grid.column(at: 0).xPlacement = .trailing
+
+        let save = NSButton(title: "Save", target: self, action: #selector(saveTapped))
+        save.keyEquivalent = "\r"
+        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped))
+        cancel.keyEquivalent = "\u{1b}" // esc
+        let buttons = NSStackView(views: [cancel, save])
+        buttons.spacing = 12
+
+        let content = NSStackView(views: [grid, blockerCheck, buttons])
+        content.orientation = .vertical
+        content.alignment = .leading
+        content.spacing = 20
+        content.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        buttons.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24).isActive = true
+        buttons.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24).isActive = true
+
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
+                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        win.title = "Eyebreak Settings"
+        win.isReleasedWhenClosed = false
+        win.delegate = self
+        win.contentView = content
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: win.contentView!.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: win.contentView!.trailingAnchor),
+            content.topAnchor.constraint(equalTo: win.contentView!.topAnchor),
+            content.bottomAnchor.constraint(equalTo: win.contentView!.bottomAnchor),
+        ])
+        window = win
+    }
+
+    private func configure(_ s: NSStepper, min: Double, max: Double, step: Double) {
+        s.minValue = min; s.maxValue = max; s.increment = step
+        s.valueWraps = false
+        s.target = self; s.action = #selector(edited)
+    }
+
+    private func row(_ label: String, stepper: NSStepper, value: NSTextField) -> [NSView] {
+        let name = NSTextField(labelWithString: label)
+        value.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        value.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let controls = NSStackView(views: [stepper, value])
+        controls.spacing = 8
+        controls.alignment = .centerY
+        return [name, controls]
+    }
+
+    // Pull the live stepper values into config and refresh the value labels.
+    @objc private func edited() {
+        config.workMinutes = workStepper.integerValue
+        config.breakSeconds = breakStepper.integerValue
+        config.breaksUntilLong = untilLongStepper.integerValue
+        config.longBreakMinutes = longStepper.integerValue
+        config.showBlocker = (blockerCheck.state == .on)
+        refreshLabels()
+    }
+
+    private func sync() {
+        workStepper.integerValue = config.workMinutes
+        breakStepper.integerValue = config.breakSeconds
+        untilLongStepper.integerValue = config.breaksUntilLong
+        longStepper.integerValue = config.longBreakMinutes
+        blockerCheck.state = config.showBlocker ? .on : .off
+        refreshLabels()
+    }
+
+    private func refreshLabels() {
+        workValue.stringValue = "\(config.workMinutes) min"
+        breakValue.stringValue = "\(config.breakSeconds) sec"
+        untilLongValue.stringValue = config.breaksUntilLong == 1 ? "1 break" : "\(config.breaksUntilLong) breaks"
+        longValue.stringValue = "\(config.longBreakMinutes) min"
+    }
+
+    @objc private func saveTapped() {
+        edited()
+        onSave?(config)
+        window?.orderOut(nil)
+    }
+
+    @objc private func cancelTapped() { window?.orderOut(nil) }
+}
+
 // MARK: - App
 
 enum Phase { case work, breaking }
@@ -357,10 +503,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var remaining = 0
     private var paused = false
     private var breaks = 0
+    // Pomodoro cycle: short breaks completed toward the next long break.
+    private var cycle = 0
+    private var isLongBreak = false
     private var sessionStart = Date()
     private var timer: Timer?
     private var warned = false
     private let blocker = BlockerController()
+    private let settings = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Quotes.seedIfNeeded()
@@ -384,7 +534,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             blocker.update(remaining: max(remaining, 0))
         } else if !warned && remaining == 5 {
             warned = true
-            notify("👀 Eye break in 5 seconds", "Look at something at least 20 feet away.")
+            let longNext = cycle + 1 >= config.breaksUntilLong
+            notify(longNext ? "🌴 Long break in 5 seconds" : "👀 Eye break in 5 seconds",
+                   "Look at something at least 20 feet away.")
         }
         if remaining <= 0 { flip() } else { updateStatus() }
     }
@@ -395,12 +547,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startBreak() {
         phase = .breaking
-        remaining = config.breakSeconds
+        // Every `breaksUntilLong`-th break is the long, Pomodoro-style one.
+        cycle += 1
+        isLongBreak = cycle >= config.breaksUntilLong
+        if isLongBreak { cycle = 0 }
+        remaining = isLongBreak ? config.longBreakSeconds : config.shortBreakSeconds
         warned = false
         Stats.log("break_start")
         if config.showBlocker {
             blocker.update(remaining: remaining)
-            blocker.present(quote: Quotes.random())
+            blocker.present(quote: Quotes.random(), title: isLongBreak ? "Long break" : "Eye break")
         }
         updateStatus(); rebuildMenu()
     }
@@ -424,7 +580,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatus() {
         guard let button = statusItem.button else { return }
         let clock = String(format: "%02d:%02d", max(remaining, 0) / 60, max(remaining, 0) % 60)
-        let icon = paused ? "⏸" : (phase == .breaking ? "☕" : "👀")
+        let icon = paused ? "⏸" : (phase == .breaking ? (isLongBreak ? "🌴" : "☕") : "👀")
         button.title = "\(icon) \(clock)"
         button.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
     }
@@ -432,8 +588,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
         let elapsed = Int(Date().timeIntervalSince(sessionStart))
-        menu.addItem(header(phase == .breaking ? "On a break" : (paused ? "Paused" : "Working")))
+        let phaseLabel = phase == .breaking
+            ? (isLongBreak ? "On a long break" : "On a break")
+            : (paused ? "Paused" : "Working")
+        menu.addItem(header(phaseLabel))
         menu.addItem(header("Completed breaks: \(breaks)"))
+        menu.addItem(header("Next long break in: \(max(config.breaksUntilLong - cycle, 0))"))
         menu.addItem(header(String(format: "Session: %02d:%02d", elapsed / 3600, (elapsed % 3600) / 60)))
         menu.addItem(.separator())
 
@@ -451,7 +611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let blockerItem = item("Full-screen blocker", #selector(toggleBlocker))
         blockerItem.state = config.showBlocker ? .on : .off
         menu.addItem(blockerItem)
-        menu.addItem(item("Edit config…", #selector(editConfig)))
+        menu.addItem(item("Settings…", #selector(openSettings)))
         menu.addItem(item("Edit quotes…", #selector(editQuotes)))
         menu.addItem(.separator())
         menu.addItem(item("Quit Eyebreak", #selector(quit)))
@@ -484,6 +644,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         phase = .work
         remaining = config.workSeconds
         breaks = 0
+        cycle = 0
+        isLongBreak = false
         paused = false
         warned = false
         sessionStart = Date()
@@ -498,9 +660,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
-    @objc private func editConfig() {
-        config.save() // make sure the file exists to open
-        openInEditor(Paths.config)
+    @objc private func openSettings() {
+        settings.onSave = { [weak self] newConfig in self?.applyConfig(newConfig) }
+        settings.show(config: config)
+    }
+
+    // Adopt settings saved from the native window: persist them and let the new
+    // values take effect from the next phase (the running countdown is left alone).
+    private func applyConfig(_ newConfig: Config) {
+        config = newConfig
+        config.save()
+        updateStatus(); rebuildMenu()
     }
 
     @objc private func editQuotes() {
