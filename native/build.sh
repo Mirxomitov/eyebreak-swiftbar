@@ -8,7 +8,7 @@
 # Usage: ./build.sh [output_dir]   (default: ./build)
 set -euo pipefail
 
-VERSION="1.3.0"
+VERSION="1.4.0"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${1:-$SRC_DIR/build}"
 APP="$OUT_DIR/Eyebreak.app"
