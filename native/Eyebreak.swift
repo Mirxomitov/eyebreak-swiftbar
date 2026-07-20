@@ -37,8 +37,9 @@ struct Config {
     var workMinutes = 20
     // A short break is the classic 20-20-20 glance-away — measured in seconds.
     var breakSeconds = 20
-    // Pomodoro: after this many short breaks, take one longer break instead.
-    var breaksUntilLong = 4
+    // Pomodoro: every Nth break is a long one (e.g. 4 → three short breaks then
+    // a long one, repeating — the classic long break after four work sessions).
+    var longBreakEvery = 4
     var longBreakMinutes = 5
     var showBlocker = true
 
@@ -69,7 +70,7 @@ struct Config {
             switch parts[0] {
             case "WORK_MINUTES":       if let n = Int(parts[1]), n >= 1 { c.workMinutes = n }
             case "BREAK_SECONDS":      if let n = Int(parts[1]), n >= 1 { c.breakSeconds = n }
-            case "BREAKS_UNTIL_LONG":  if let n = Int(parts[1]), n >= 1 { c.breaksUntilLong = n }
+            case "LONG_BREAK_EVERY":   if let n = Int(parts[1]), n >= 1 { c.longBreakEvery = n }
             case "LONG_BREAK_MINUTES": if let n = Int(parts[1]), n >= 1 { c.longBreakMinutes = n }
             case "SHOW_BLOCKER":       c.showBlocker = (parts[1] != "0")
             // Back-compat: honor an older minute-based break config.
@@ -87,8 +88,9 @@ struct Config {
         WORK_MINUTES=\(workMinutes)
         # Length of a short break, in seconds (the 20-20-20 glance-away).
         BREAK_SECONDS=\(breakSeconds)
-        # Pomodoro: take one long break after this many short breaks.
-        BREAKS_UNTIL_LONG=\(breaksUntilLong)
+        # Pomodoro: make every Nth break a long one (4 = a long break after every
+        # three short ones, i.e. the classic long break after four work sessions).
+        LONG_BREAK_EVERY=\(longBreakEvery)
         # Length of that long break, in minutes.
         LONG_BREAK_MINUTES=\(longBreakMinutes)
         # Put up the full-screen blocker during a break (1), or just notify (0).
@@ -372,12 +374,24 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var config = Config()
     var onSave: ((Config) -> Void)?
 
-    private let workStepper = NSStepper()
-    private let breakStepper = NSStepper()
-    private let untilLongStepper = NSStepper()
-    private let longStepper = NSStepper()
+    override init() {
+        step = [
+            ObjectIdentifier(workSlider): 1,
+            ObjectIdentifier(breakSlider): 5,
+            ObjectIdentifier(untilLongSlider): 1,
+            ObjectIdentifier(longSlider): 1,
+        ]
+        super.init()
+    }
+
+    private let workSlider = NSSlider()
+    private let breakSlider = NSSlider()
+    private let untilLongSlider = NSSlider()
+    private let longSlider = NSSlider()
     private let blockerCheck = NSButton(checkboxWithTitle: "Show the full-screen blocker during breaks",
                                         target: nil, action: nil)
+    // Each slider snaps its raw value to this increment.
+    private let step: [ObjectIdentifier: Int]
     private let workValue = NSTextField(labelWithString: "")
     private let breakValue = NSTextField(labelWithString: "")
     private let untilLongValue = NSTextField(labelWithString: "")
@@ -393,22 +407,25 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     private func build() {
-        // Bounded steppers mean every reachable value is valid — nothing to mistype.
-        configure(workStepper, min: 1, max: 180, step: 1)
-        configure(breakStepper, min: 5, max: 3600, step: 5)
-        configure(untilLongStepper, min: 1, max: 12, step: 1)
-        configure(longStepper, min: 1, max: 120, step: 1)
+        // Bounded sliders mean every reachable value is valid — nothing to mistype.
+        configure(workSlider, min: 1, max: 180)
+        configure(breakSlider, min: 5, max: 300)
+        configure(untilLongSlider, min: 1, max: 12)
+        configure(longSlider, min: 1, max: 60)
         blockerCheck.target = self
         blockerCheck.action = #selector(edited)
 
         let grid = NSGridView()
-        grid.addRow(with: row("Work interval",     stepper: workStepper,     value: workValue))
-        grid.addRow(with: row("Short break",       stepper: breakStepper,    value: breakValue))
-        grid.addRow(with: row("Breaks until long", stepper: untilLongStepper, value: untilLongValue))
-        grid.addRow(with: row("Long break",        stepper: longStepper,     value: longValue))
-        grid.rowSpacing = 12
-        grid.columnSpacing = 12
-        grid.column(at: 0).xPlacement = .trailing
+        grid.addRow(with: row("Work interval",     slider: workSlider,      value: workValue))
+        grid.addRow(with: row("Short break",       slider: breakSlider,     value: breakValue))
+        grid.addRow(with: row("Long break every", slider: untilLongSlider, value: untilLongValue))
+        grid.addRow(with: row("Long break",        slider: longSlider,      value: longValue))
+        grid.rowSpacing = 16
+        grid.columnSpacing = 14
+        grid.rowAlignment = .none
+        grid.column(at: 0).xPlacement = .trailing // labels flush to the sliders
+        grid.column(at: 2).xPlacement = .leading  // values share one column, left-aligned
+        for i in 0..<grid.numberOfRows { grid.row(at: i).yPlacement = .center }
 
         let save = NSButton(title: "Save", target: self, action: #selector(saveTapped))
         save.keyEquivalent = "\r"
@@ -426,7 +443,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         buttons.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24).isActive = true
         buttons.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24).isActive = true
 
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 300),
                            styleMask: [.titled, .closable], backing: .buffered, defer: false)
         win.title = "Eyebreak Settings"
         win.isReleasedWhenClosed = false
@@ -438,48 +455,59 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             content.topAnchor.constraint(equalTo: win.contentView!.topAnchor),
             content.bottomAnchor.constraint(equalTo: win.contentView!.bottomAnchor),
         ])
+        // Size the window to the content so no leftover vertical space gets
+        // dumped into the first row gap — keeps every row evenly spaced.
+        win.layoutIfNeeded()
+        win.setContentSize(content.fittingSize)
         window = win
     }
 
-    private func configure(_ s: NSStepper, min: Double, max: Double, step: Double) {
-        s.minValue = min; s.maxValue = max; s.increment = step
-        s.valueWraps = false
+    private func configure(_ s: NSSlider, min: Double, max: Double) {
+        s.minValue = min; s.maxValue = max
+        s.isContinuous = true
         s.target = self; s.action = #selector(edited)
+        s.widthAnchor.constraint(equalToConstant: 200).isActive = true
     }
 
-    private func row(_ label: String, stepper: NSStepper, value: NSTextField) -> [NSView] {
+    private func row(_ label: String, slider: NSSlider, value: NSTextField) -> [NSView] {
         let name = NSTextField(labelWithString: label)
         value.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        value.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let controls = NSStackView(views: [stepper, value])
-        controls.spacing = 8
-        controls.alignment = .centerY
-        return [name, controls]
+        value.setContentHuggingPriority(.required, for: .horizontal)
+        value.widthAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
+        return [name, slider, value] // three grid columns: label · slider · value
     }
 
-    // Pull the live stepper values into config and refresh the value labels.
+    // Snap a slider's raw value to its configured increment.
+    private func snapped(_ s: NSSlider) -> Int {
+        let inc = step[ObjectIdentifier(s)] ?? 1
+        return Int((s.doubleValue / Double(inc)).rounded()) * inc
+    }
+
+    // Pull the live slider values into config and refresh the value labels.
     @objc private func edited() {
-        config.workMinutes = workStepper.integerValue
-        config.breakSeconds = breakStepper.integerValue
-        config.breaksUntilLong = untilLongStepper.integerValue
-        config.longBreakMinutes = longStepper.integerValue
+        config.workMinutes = snapped(workSlider)
+        config.breakSeconds = snapped(breakSlider)
+        config.longBreakEvery = snapped(untilLongSlider)
+        config.longBreakMinutes = snapped(longSlider)
         config.showBlocker = (blockerCheck.state == .on)
         refreshLabels()
     }
 
     private func sync() {
-        workStepper.integerValue = config.workMinutes
-        breakStepper.integerValue = config.breakSeconds
-        untilLongStepper.integerValue = config.breaksUntilLong
-        longStepper.integerValue = config.longBreakMinutes
+        workSlider.integerValue = config.workMinutes
+        breakSlider.integerValue = config.breakSeconds
+        untilLongSlider.integerValue = config.longBreakEvery
+        longSlider.integerValue = config.longBreakMinutes
         blockerCheck.state = config.showBlocker ? .on : .off
-        refreshLabels()
+        // Normalize labels (and our working copy) to the slider-valid values, so a
+        // hand-edited or out-of-range config shows what Save would actually write.
+        edited()
     }
 
     private func refreshLabels() {
         workValue.stringValue = "\(config.workMinutes) min"
         breakValue.stringValue = "\(config.breakSeconds) sec"
-        untilLongValue.stringValue = config.breaksUntilLong == 1 ? "1 break" : "\(config.breaksUntilLong) breaks"
+        untilLongValue.stringValue = config.longBreakEvery == 1 ? "1 break" : "\(config.longBreakEvery) breaks"
         longValue.stringValue = "\(config.longBreakMinutes) min"
     }
 
@@ -502,11 +530,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var phase: Phase = .work
     private var remaining = 0
     private var paused = false
-    private var breaks = 0
     // Pomodoro cycle: short breaks completed toward the next long break.
     private var cycle = 0
     private var isLongBreak = false
-    private var sessionStart = Date()
     private var timer: Timer?
     private var warned = false
     private let blocker = BlockerController()
@@ -532,9 +558,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         remaining -= 1
         if phase == .breaking {
             blocker.update(remaining: max(remaining, 0))
-        } else if !warned && remaining == 5 {
+        } else if !warned && remaining <= 5 && remaining > 0 {
             warned = true
-            let longNext = cycle + 1 >= config.breaksUntilLong
+            let longNext = cycle + 1 >= config.longBreakEvery
             notify(longNext ? "🌴 Long break in 5 seconds" : "👀 Eye break in 5 seconds",
                    "Look at something at least 20 feet away.")
         }
@@ -545,12 +571,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if phase == .work { startBreak() } else { endBreak(early: false) }
     }
 
-    private func startBreak() {
+    // `manual` breaks (Take break now) are always a short glance-away and don't
+    // advance the Pomodoro cycle — only scheduled breaks count toward the long one.
+    private func startBreak(manual: Bool = false) {
         phase = .breaking
-        // Every `breaksUntilLong`-th break is the long, Pomodoro-style one.
-        cycle += 1
-        isLongBreak = cycle >= config.breaksUntilLong
-        if isLongBreak { cycle = 0 }
+        if manual {
+            isLongBreak = false
+        } else {
+            // Every `longBreakEvery`-th scheduled break is the long, Pomodoro one.
+            cycle += 1
+            isLongBreak = cycle >= config.longBreakEvery
+            if isLongBreak { cycle = 0 }
+        }
         remaining = isLongBreak ? config.longBreakSeconds : config.shortBreakSeconds
         warned = false
         Stats.log("break_start")
@@ -563,11 +595,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func endBreak(early: Bool) {
         if phase == .breaking {
-            breaks += 1
             Stats.log("break_end")
         }
         phase = .work
         remaining = config.workSeconds
+        isLongBreak = false
         paused = false
         warned = false
         blocker.dismiss()
@@ -587,16 +619,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
-        let elapsed = Int(Date().timeIntervalSince(sessionStart))
-        let phaseLabel = phase == .breaking
-            ? (isLongBreak ? "On a long break" : "On a break")
-            : (paused ? "Paused" : "Working")
-        menu.addItem(header(phaseLabel))
-        menu.addItem(header("Completed breaks: \(breaks)"))
-        menu.addItem(header("Next long break in: \(max(config.breaksUntilLong - cycle, 0))"))
-        menu.addItem(header(String(format: "Session: %02d:%02d", elapsed / 3600, (elapsed % 3600) / 60)))
-        menu.addItem(.separator())
-
         if phase == .breaking {
             menu.addItem(item("End break now", #selector(endBreakNow)))
         } else {
@@ -605,23 +627,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(paused ? "Resume" : "Pause", #selector(togglePause)))
         menu.addItem(item("Reset timer", #selector(resetTimer)))
         menu.addItem(.separator())
-        menu.addItem(item("Statistics…", #selector(showStats)))
-        menu.addItem(.separator())
-
-        let blockerItem = item("Full-screen blocker", #selector(toggleBlocker))
-        blockerItem.state = config.showBlocker ? .on : .off
-        menu.addItem(blockerItem)
         menu.addItem(item("Settings…", #selector(openSettings)))
+        menu.addItem(item("Statistics…", #selector(showStats)))
         menu.addItem(item("Edit quotes…", #selector(editQuotes)))
         menu.addItem(.separator())
         menu.addItem(item("Quit Eyebreak", #selector(quit)))
         statusItem.menu = menu
-    }
-
-    private func header(_ s: String) -> NSMenuItem {
-        let i = NSMenuItem(title: s, action: nil, keyEquivalent: "")
-        i.isEnabled = false
-        return i
     }
 
     private func item(_ title: String, _ sel: Selector) -> NSMenuItem {
@@ -632,7 +643,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Actions
 
-    @objc private func takeBreakNow() { if phase == .work { startBreak() } }
+    @objc private func takeBreakNow() { if phase == .work { startBreak(manual: true) } }
     @objc private func endBreakNow() { endBreak(early: true) }
 
     @objc private func togglePause() {
@@ -643,21 +654,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func resetTimer() {
         phase = .work
         remaining = config.workSeconds
-        breaks = 0
         cycle = 0
         isLongBreak = false
         paused = false
         warned = false
-        sessionStart = Date()
         blocker.dismiss()
         Stats.log("reset")
         updateStatus(); rebuildMenu()
-    }
-
-    @objc private func toggleBlocker() {
-        config.showBlocker.toggle()
-        config.save()
-        rebuildMenu()
     }
 
     @objc private func openSettings() {
